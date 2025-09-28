@@ -32,12 +32,12 @@ func main() {
 		TaskQueue: string(consts.Worker2),
 	}
 
-	we, err := c.ExecuteWorkflow(context.Background(), options, my_example.FiveActivityWorkflow)
+	we, err := c.ExecuteWorkflow(context.Background(), options, my_example.FiveActivityWorkflow, initialInput)
 	if err != nil {
 		log.Fatalln("Unable to execute workflow", err)
 	}
-	log.Println("Started workflow", "WorkflowID", we.GetID(), "RunID", we.GetRunID())
-	c.SignalWorkflow(context.Background(), we.GetID(), we.GetRunID(), "signal-a1", my_example.ActivityInput{Value: initialInput})
+	// log.Println("Started workflow", "WorkflowID", we.GetID(), "RunID", we.GetRunID())
+	// c.SignalWorkflow(context.Background(), we.GetID(), we.GetRunID(), "signal-a1", my_example.ActivityInput{Value: initialInput})
 	var result []int
 	err = we.Get(context.Background(), &result)
 	if err != nil {

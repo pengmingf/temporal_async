@@ -64,6 +64,9 @@ const (
 
 	// 状态更新信号
 	StatusUpdateSignal = "status-update"
+
+	// 取余number
+	qyNumber = 9
 )
 
 // Signal数据结构
@@ -102,14 +105,14 @@ const (
 type OutputProcessParams struct {
 	Outputs      []int
 	CurrentNode  NodeType
-	StatusSignal string
-	PrevSignal   string // 上一个节点的信号名称（可选）
-	NextSignal   string // 下一个节点的信号名称（可选）
-	FinalResults *[]int // 最终结果存储（仅A5使用）
+	StatusSignal string           // 当前节点的信道
+	PrevSignal   workflow.Channel // 上一个节点的信道
+	NextSignal   workflow.Channel // 下一个节点的信道（信号通道）
+	FinalResults *[]int           // 最终结果存储（仅A5使用）
 }
 
 // FiveActivityWorkflow 5个Activity的异步Workflow
-func FiveActivityWorkflow(ctx workflow.Context) ([]int, error) {
+func FiveActivityWorkflow(ctx workflow.Context, initialInput int) ([]int, error) {
 	// 设置Activity选项
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout:    time.Minute * 10,
@@ -117,22 +120,17 @@ func FiveActivityWorkflow(ctx workflow.Context) ([]int, error) {
 		ScheduleToCloseTimeout: time.Minute * 15,
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-
 	logger := workflow.GetLogger(ctx)
-
-	// workflowInfo := workflow.GetInfo(ctx) // 使用父上下文ctx而不是childCtx
-	// workflowID := workflowInfo.WorkflowExecution.ID
-	// runID := workflowInfo.WorkflowExecution.RunID
 
 	// 设置当前待完成任务数
 	totalTask.Add(1)
 
-	// 初始化信号通道
-	signalA1 := workflow.GetSignalChannel(ctx, SignalA1)
-	signalA2 := workflow.GetSignalChannel(ctx, SignalA2)
-	signalA3 := workflow.GetSignalChannel(ctx, SignalA3)
-	signalA4 := workflow.GetSignalChannel(ctx, SignalA4)
-	signalA5 := workflow.GetSignalChannel(ctx, SignalA5)
+	// 初始化信号通道 todo 这里的初始大小要考虑清楚。或者考虑做一个全局优先级队列？（分布式问题怎么办）
+	signalA1 := workflow.NewBufferedChannel(ctx, 10000)
+	signalA2 := workflow.NewBufferedChannel(ctx, 10000)
+	signalA3 := workflow.NewBufferedChannel(ctx, 10000)
+	signalA4 := workflow.NewBufferedChannel(ctx, 10000)
+	signalA5 := workflow.NewBufferedChannel(ctx, 10000)
 
 	// 最终结果存储
 	finalResults := []int{}
@@ -147,6 +145,7 @@ func FiveActivityWorkflow(ctx workflow.Context) ([]int, error) {
 			selector := workflow.NewSelector(gCtx)
 			// 监听所有信号
 			selector.AddReceive(signalA1, func(c workflow.ReceiveChannel, more bool) {
+				logger.Info("A1收到")
 				if !more {
 					return
 				}
@@ -155,7 +154,7 @@ func FiveActivityWorkflow(ctx workflow.Context) ([]int, error) {
 				logger.Info("A1收到信号", "value", input.Value)
 				// 触发A1执行
 				workflow.Go(gCtx, func(ctx workflow.Context) {
-					executeActivityA1(ctx, input.Value, StatusUpdateSignal, SignalA2, &finalResults)
+					executeActivityA1(ctx, input.Value, StatusUpdateSignal, signalA2, &finalResults)
 				})
 			})
 
@@ -168,7 +167,7 @@ func FiveActivityWorkflow(ctx workflow.Context) ([]int, error) {
 				logger.Info("A2收到信号", "value", input.Value)
 				// 触发A2执行
 				workflow.Go(gCtx, func(ctx workflow.Context) {
-					executeActivityA2(ctx, input.Value, StatusUpdateSignal, SignalA1, SignalA3, &finalResults)
+					executeActivityA2(ctx, input.Value, StatusUpdateSignal, signalA1, signalA3, &finalResults)
 				})
 			})
 
@@ -181,7 +180,7 @@ func FiveActivityWorkflow(ctx workflow.Context) ([]int, error) {
 				logger.Info("A3收到信号", "value", input.Value)
 				// 触发A3执行
 				workflow.Go(gCtx, func(ctx workflow.Context) {
-					executeActivityA3(ctx, input.Value, StatusUpdateSignal, SignalA2, SignalA4, &finalResults)
+					executeActivityA3(ctx, input.Value, StatusUpdateSignal, signalA2, signalA4, &finalResults)
 				})
 			})
 
@@ -194,7 +193,7 @@ func FiveActivityWorkflow(ctx workflow.Context) ([]int, error) {
 				logger.Info("A4收到信号", "value", input.Value)
 				// 触发A4执行
 				workflow.Go(gCtx, func(ctx workflow.Context) {
-					executeActivityA4(ctx, input.Value, StatusUpdateSignal, SignalA3, SignalA5, &finalResults)
+					executeActivityA4(ctx, input.Value, StatusUpdateSignal, signalA3, signalA5, &finalResults)
 				})
 			})
 
@@ -207,7 +206,7 @@ func FiveActivityWorkflow(ctx workflow.Context) ([]int, error) {
 				logger.Info("A5收到信号", "value", input.Value)
 				// 触发A5执行
 				workflow.Go(gCtx, func(ctx workflow.Context) {
-					executeActivityA5(ctx, input.Value, StatusUpdateSignal, SignalA4, &finalResults)
+					executeActivityA5(ctx, input.Value, StatusUpdateSignal, signalA4, &finalResults)
 				})
 			})
 
@@ -221,23 +220,16 @@ func FiveActivityWorkflow(ctx workflow.Context) ([]int, error) {
 		}
 	})
 
-	// 异步发送初始信号给A1
-	// executeActivityA1(childCtx, initialInput, StatusUpdateSignal, SignalA1, &finalResults)
-	// workflow.Go(childCtx, func(gCtx workflow.Context) {
-	// 	time.Sleep(time.Millisecond * 300)
-	// 	logger.Info("发送初始信号给A1", "workflowID", workflowID, "runID", runID)
-	// 	err := workflow.SignalExternalWorkflow(ctx, workflowID, runID, SignalA1, ActivityInput{Value: initialInput}).Get(ctx, nil)
-	// 	if err != nil {
-	// 		logger.Error("发送初始信号失败", "error", err)
-	// 	}
-	// })
+	// 异步发送初始数据给到信道A1
+	logger.Info("开始异步发送信号完成")
+	signalA1.Send(ctx, ActivityInput{Value: initialInput})
+	logger.Info("初始异步发送信号完成")
 
 	// 等待所有Activity完成
 	for {
-		workflow.Sleep(ctx, time.Second*20)
-
+		workflow.Sleep(ctx, time.Second*5)
 		// 检查是否所有Activity都已执行
-		if totalTask.Load() != 0 {
+		if totalTask.Load() > 0 {
 			logger.Info("totalTask not fninish", "任务数", totalTask.Load())
 			continue
 		}
@@ -254,56 +246,60 @@ func FiveActivityWorkflow(ctx workflow.Context) ([]int, error) {
 // 统一的输出处理方法
 func processActivityOutputs(ctx workflow.Context, params OutputProcessParams) {
 	logger := workflow.GetLogger(ctx)
-
 	logger.Info("开始处理节点输出", "node", params.CurrentNode, "outputs", params.Outputs)
-	workflowInfo := workflow.GetInfo(ctx)
-	workflowID := workflowInfo.WorkflowExecution.ID
-	runID := workflowInfo.WorkflowExecution.RunID
 
 	switch params.CurrentNode {
 	case NodeA1:
 		totalTask.Add(int64(len(params.Outputs)))
 		// A1节点：所有输出传给下一个节点(A2)
 		for _, output := range params.Outputs {
-			workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.NextSignal, ActivityInput{Value: output})
+			params.NextSignal.SendAsync(ActivityInput{Value: output})
+			// workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.NextSignal)
 		}
 	case NodeA2:
 		totalTask.Add(int64(len(params.Outputs)))
 		// A2节点：能被3整除的传回上一个节点(A1)，其他传给下一个节点(A3)
 		for _, output := range params.Outputs {
-			if output%3 == 0 {
-				workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.PrevSignal, ActivityInput{Value: output})
+			if output%qyNumber == 0 {
+				params.PrevSignal.SendAsync(ActivityInput{Value: output})
+				// workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.PrevSignal, ActivityInput{Value: output})
 			} else {
-				workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.NextSignal, ActivityInput{Value: output})
+				params.NextSignal.SendAsync(ActivityInput{Value: output})
+				// workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.NextSignal, ActivityInput{Value: output})
 			}
 		}
 	case NodeA3:
 		totalTask.Add(int64(len(params.Outputs)))
 		// A3节点：能被3整除的传回上一个节点(A2)，其他传给下一个节点(A4)
 		for _, output := range params.Outputs {
-			if output%3 == 0 {
-				workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.PrevSignal, ActivityInput{Value: output})
+			if output%qyNumber == 0 {
+				params.PrevSignal.SendAsync(ActivityInput{Value: output})
+				// workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.PrevSignal, ActivityInput{Value: output})
 			} else {
-				workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.NextSignal, ActivityInput{Value: output})
+				params.NextSignal.SendAsync(ActivityInput{Value: output})
+				// workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.NextSignal, ActivityInput{Value: output})
 			}
 		}
 	case NodeA4:
 		totalTask.Add(int64(len(params.Outputs)))
 		// A4节点：能被3整除的传回上一个节点(A3)，其他传给下一个节点(A5)
 		for _, output := range params.Outputs {
-			if output%3 == 0 {
-				workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.PrevSignal, ActivityInput{Value: output})
+			if output%qyNumber == 0 {
+				params.PrevSignal.SendAsync(ActivityInput{Value: output})
+				// workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.PrevSignal, ActivityInput{Value: output})
 			} else {
-				workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.NextSignal, ActivityInput{Value: output})
+				params.NextSignal.SendAsync(ActivityInput{Value: output})
+				// workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.NextSignal, ActivityInput{Value: output})
 			}
 		}
 	case NodeA5:
 
 		// A5节点：能被3整除的传回上一个节点(A4)，其他存储为最终结果
 		for _, output := range params.Outputs {
-			if output%3 == 0 {
+			if output%qyNumber == 0 {
 				totalTask.Add(1)
-				workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.PrevSignal, ActivityInput{Value: output})
+				params.PrevSignal.SendAsync(ActivityInput{Value: output})
+				// workflow.SignalExternalWorkflow(ctx, workflowID, runID, params.PrevSignal, ActivityInput{Value: output})
 			} else {
 				// 存储为最终结果
 				*params.FinalResults = append(*params.FinalResults, output)
@@ -318,7 +314,7 @@ func processActivityOutputs(ctx workflow.Context, params OutputProcessParams) {
 }
 
 // executeActivityA1 执行A1 Activity
-func executeActivityA1(ctx workflow.Context, input int, statusSignal string, nextSignal string, finalResults *[]int) {
+func executeActivityA1(ctx workflow.Context, input int, statusSignal string, nextSignal workflow.Channel, finalResults *[]int) {
 	logger := workflow.GetLogger(ctx)
 
 	logger.Info("开始执行A1", "input", input)
@@ -345,7 +341,7 @@ func executeActivityA1(ctx workflow.Context, input int, statusSignal string, nex
 }
 
 // executeActivityA2 执行A2 Activity
-func executeActivityA2(ctx workflow.Context, input int, statusSignal string, prevSignal, nextSignal string, finalResults *[]int) {
+func executeActivityA2(ctx workflow.Context, input int, statusSignal string, prevSignal, nextSignal workflow.Channel, finalResults *[]int) {
 	logger := workflow.GetLogger(ctx)
 
 	logger.Info("开始执行A2", "input", input)
@@ -373,7 +369,7 @@ func executeActivityA2(ctx workflow.Context, input int, statusSignal string, pre
 }
 
 // executeActivityA3 执行A3 Activity
-func executeActivityA3(ctx workflow.Context, input int, statusSignal string, prevSignal, nextSignal string, finalResults *[]int) {
+func executeActivityA3(ctx workflow.Context, input int, statusSignal string, prevSignal, nextSignal workflow.Channel, finalResults *[]int) {
 	logger := workflow.GetLogger(ctx)
 
 	logger.Info("开始执行A3", "input", input)
@@ -401,7 +397,7 @@ func executeActivityA3(ctx workflow.Context, input int, statusSignal string, pre
 }
 
 // executeActivityA4 执行A4 Activity
-func executeActivityA4(ctx workflow.Context, input int, statusSignal string, prevSignal, nextSignal string, finalResults *[]int) {
+func executeActivityA4(ctx workflow.Context, input int, statusSignal string, prevSignal, nextSignal workflow.Channel, finalResults *[]int) {
 	logger := workflow.GetLogger(ctx)
 
 	logger.Info("开始执行A4", "input", input)
@@ -429,7 +425,7 @@ func executeActivityA4(ctx workflow.Context, input int, statusSignal string, pre
 }
 
 // executeActivityA5 执行A5 Activity
-func executeActivityA5(ctx workflow.Context, input int, statusSignal string, prevSignal string, finalResults *[]int) {
+func executeActivityA5(ctx workflow.Context, input int, statusSignal string, prevSignal workflow.Channel, finalResults *[]int) {
 	logger := workflow.GetLogger(ctx)
 
 	logger.Info("开始执行A5", "input", input)

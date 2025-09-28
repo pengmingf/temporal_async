@@ -90,10 +90,10 @@ func ActivityA1(ctx context.Context, input int) ([]int, error) {
 	time.Sleep(time.Millisecond * 100)
 
 	// 生成3-9个随机值（范围1-100），并去重
-	count := rand.Intn(7) + 3 // 3-9之间的随机数
+	count := rand.Intn(3) + 1 // 1-3之间的随机数
 	results := make(map[int]bool)
 	for len(results) < count {
-		value := rand.Intn(100) + 1 // 1-100之间的随机数
+		value := rand.Intn(10) + 1 // 1-100之间的随机数
 		results[value] = true
 	}
 
@@ -116,10 +116,10 @@ func ActivityA2(ctx context.Context, input int) ([]int, error) {
 	time.Sleep(time.Millisecond * 100)
 
 	// 生成3-9个随机值（范围1-100），并去重
-	count := rand.Intn(7) + 3 // 3-9之间的随机数
+	count := rand.Intn(3) + 1 // 1-3之间的随机数
 	results := make(map[int]bool)
 	for len(results) < count {
-		value := rand.Intn(100) + 1 // 1-100之间的随机数
+		value := rand.Intn(10) + 1 // 1-100之间的随机数
 		results[value] = true
 	}
 
@@ -142,10 +142,10 @@ func ActivityA3(ctx context.Context, input int) ([]int, error) {
 	time.Sleep(time.Millisecond * 100)
 
 	// 生成3-9个随机值（范围1-100），并去重
-	count := rand.Intn(7) + 3 // 3-9之间的随机数
+	count := rand.Intn(3) + 1 // 1-3之间的随机数
 	results := make(map[int]bool)
 	for len(results) < count {
-		value := rand.Intn(100) + 1 // 1-100之间的随机数
+		value := rand.Intn(10) + 1 // 1-100之间的随机数
 		results[value] = true
 	}
 
@@ -168,10 +168,10 @@ func ActivityA4(ctx context.Context, input int) ([]int, error) {
 	time.Sleep(time.Millisecond * 100)
 
 	// 生成3-9个随机值（范围1-100），并去重
-	count := rand.Intn(7) + 3 // 3-9之间的随机数
+	count := rand.Intn(3) + 1 // 1-3之间的随机数
 	results := make(map[int]bool)
 	for len(results) < count {
-		value := rand.Intn(100) + 1 // 1-100之间的随机数
+		value := rand.Intn(10) + 1 // 1-100之间的随机数
 		results[value] = true
 	}
 
@@ -194,10 +194,10 @@ func ActivityA5(ctx context.Context, input int) ([]int, error) {
 	time.Sleep(time.Millisecond * 100)
 
 	// 生成3-9个随机值（范围1-100），并去重
-	count := rand.Intn(7) + 3 // 3-9之间的随机数
+	count := rand.Intn(3) + 1 // 1-3之间的随机数
 	results := make(map[int]bool)
 	for len(results) < count {
-		value := rand.Intn(100) + 1 // 1-100之间的随机数
+		value := rand.Intn(10) + 1 // 1-100之间的随机数
 		results[value] = true
 	}
 
